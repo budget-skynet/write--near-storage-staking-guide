@@ -2,285 +2,254 @@
 
 ## Introduction
 
-NEAR Protocol uses a unique storage staking mechanism to ensure sustainable blockchain growth. Unlike traditional models where storage is "rent-free," NEAR requires accounts to maintain a minimum balance to cover the storage they consume on-chain. This guide provides developers with comprehensive knowledge about storage staking, cost calculations, and optimization strategies.
+Storage staking is a fundamental mechanism in the NEAR Protocol that ensures network efficiency and prevents state bloat. Unlike traditional blockchains where storing data on-chain is "free" after transaction fees, NEAR implements an explicit storage cost model where developers and users must stake NEAR tokens to maintain data on the blockchain. This guide walks you through understanding storage staking mechanics, calculating costs accurately, and optimizing your smart contracts to minimize storage expenses.
 
-## 1. Storage Staking Fundamentals
+## Storage Staking Fundamentals
 
-### What is Storage Staking?
+Storage staking in NEAR operates on a simple principle: **storage bytes × price per byte = NEAR tokens required**. Currently, the storage price is **0.1 Ⓝ per 100KB** (or 0.000001 Ⓝ per byte). When you store data on NEAR, you're not burning tokens—you're staking them. This staked amount remains reserved in your account, earning the same yields as delegated tokens while locked.
 
-Storage staking is NEAR's economic model for managing blockchain state growth. Every byte of data stored on-chain requires backing by a corresponding amount of NEAR tokens locked in the account. This approach incentivizes efficient data management and prevents blockchain bloat.
+The distinction between staking and burning is critical. Staked tokens for storage:
+- Remain in your account as reserved balance
+- Can be unstaked when you delete contract state or reduce data
+- Earn staking rewards proportional to the network's validator commission
+- Are separate from your liquid NEAR balance
 
-### Key Concepts
+This mechanism prevents malicious actors from creating unlimited state growth on validators' machines. Each byte of state requires a corresponding stake, making state bloat economically unfeasible. When you interact with a contract, the contract creator or transaction sender must cover storage expansion costs.
 
-**Storage Measurement**: Storage is measured in bytes, encompassing:
-- Account metadata (keys, nonce, code hash)
-- Smart contract state
-- Account balances
-- Delegated validator stakes
+## Cost Calculation Examples
 
-**Account Balance Relationship**: An account's available balance = total balance - storage stake required
+### Example 1: Simple Account Creation Storage Cost
 
-```
-Available Balance = Total Balance - (Storage Used × Cost Per Byte)
-```
+**Input:** Creating a new NEAR account requires storing account metadata (~500 bytes)
 
-**State Rent vs. Storage Staking**: 
+**Calculation:**
+- Storage bytes: 500
+- Price per byte: 0.000001 Ⓝ
+- Total: 500 × 0.000001 = **0.0005 Ⓝ**
 
-NEAR originally planned state rent (charging rent on unused data), but switched to storage staking (locking capital for storage). This change reduced complexity and provided predictability—once you stake for storage, the cost never increases.
+### Example 2: Smart Contract Deployment Storage Cost
 
-### Account Overhead
+**Input:** Deploying a small smart contract with 150KB compiled WASM binary + metadata (~5KB)
 
-Every NEAR account has a base overhead of **182 bytes**, regardless of stored data. This covers:
-- Account ID (variable length)
-- Account metadata
-- Access keys
+**Calculation:**
+- Total bytes: 150,000 + 5,000 = 155,000 bytes
+- Price per byte: 0.000001 Ⓝ
+- Total: 155,000 × 0.000001 = **0.155 Ⓝ**
 
-## 2. Cost Calculation Methodology
+### Example 3: Fungible Token Transfer Storage Cost
 
-### Storage Cost Formula
+**Input:** Registering a new account for a fungible token (storage required for balance tracking: ~350 bytes)
 
-```
-Storage Cost (NEAR) = Storage Used (bytes) × Cost Per Byte
-```
+**Calculation:**
+- Storage bytes: 350
+- Price per byte: 0.000001 Ⓝ
+- Total: 350 × 0.000001 = **0.00035 Ⓝ**
 
-### Current Cost Per Byte
+### Example 4: NFT Minting Storage Cost
 
-As of 2024, NEAR's cost per byte is:
-```
-Cost Per Byte = 0.00001 NEAR = 10^-5 NEAR
-```
+**Input:** Minting an NFT with metadata (IPFS hash + attributes: ~2KB total)
 
-To convert to yoctoNEAR (smallest NEAR unit):
-```
-Cost Per Byte = 10,000 yoctoNEAR
-```
+**Calculation:**
+- Storage bytes: 2,000
+- Price per byte: 0.000001 Ⓝ
+- Total: 2,000 × 0.000001 = **0.002 Ⓝ**
 
-### Calculating Total Storage Usage
+### Example 5: Complex dApp State Example with Cumulative Costs
 
-1. **Base account overhead**: 182 bytes
-2. **Contract code size**: Serialized WASM binary
-3. **State data**: Serialized JSON-like structures
+**Input:** A DeFi protocol interaction storing user position data
+- User account balance: 200 bytes
+- Liquidation queue entry: 150 bytes
+- Oracle price cache: 500 bytes
+- Transaction history entry: 300 bytes
 
-### Worked Examples
+**Calculation:**
+- Total bytes: 200 + 150 + 500 + 300 = 1,150 bytes
+- Price per byte: 0.000001 Ⓝ
+- Total: 1,150 × 0.000001 = **0.00115 Ⓝ**
 
-#### Example 1: Simple Account with No Contract
+## Storage Deposit Patterns
 
-```
-Storage breakdown:
-- Account ID: ~20 bytes (e.g., "alice.near")
-- Account metadata: ~100 bytes
-- One access key: ~62 bytes
-- Total: ~182 bytes (base overhead)
-
-Cost calculation:
-Storage Cost = 182 bytes × 10^-5 NEAR
-Storage Cost = 0.00182 NEAR
-```
-
-#### Example 2: Fungible Token Contract with 1,000 Holders
-
-```
-Storage breakdown:
-- Contract WASM code: ~50 KB = 51,200 bytes
-- Contract state (metadata): ~500 bytes
-  * Token name, symbol, decimals
-  * Owner account
-- Token balances (1,000 holders): 1,000 × 48 bytes = 48,000 bytes
-  * Each holder: account ID hash (32 bytes) + balance (16 bytes)
-- Total: 51,200 + 500 + 48,000 = 99,700 bytes
-
-Cost calculation:
-Storage Cost = 99,700 bytes × 10^-5 NEAR
-Storage Cost = 0.997 NEAR ≈ 1 NEAR
-```
-
-#### Example 3: NFT Minting Operation
-
-```
-Scenario: Minting an NFT with metadata
-
-Storage added per NFT:
-- Token ID (string): ~20 bytes
-- Owner account reference: ~32 bytes
-- Metadata (JSON): ~200 bytes
-  * title, description, image URL, etc.
-- Total per NFT: ~252 bytes
-
-Cost per NFT minted:
-Storage Cost = 252 bytes × 10^-5 NEAR
-Storage Cost = 0.00252 NEAR per token
-
-For 100 NFTs:
-Total Cost = 0.252 NEAR
-
-For 10,000 NFTs:
-Total Cost = 25.2 NEAR
-```
-
-## 3. Storage Deposit Patterns
-
-### Pattern 1: Storage Deposit Function
-
-Most NEAR contracts implement a `storage_deposit()` function allowing users to pre-pay for storage:
+### Pattern 1: Attaching Storage Deposit to Function Calls
 
 ```rust
-#[payable]
-pub fn storage_deposit(&mut self, account_id: Option<AccountId>) -> StorageBalance {
-    let account_id = account_id.unwrap_or_else(env::predecessor_account_id);
-    let account_storage = self.accounts.get(&account_id).unwrap_or_default();
-    let storage_cost = account_storage.storage_usage as u128 * STORAGE_COST_PER_BYTE;
+use near_sdk::{near_bindgen, require, env};
+
+#[near_bindgen]
+pub fn create_user_profile(name: String, bio: String) -> Result<(), String> {
+    let storage_required = (name.len() + bio.len()) as u128;
+    let storage_cost = storage_required * 1_000_000_000_000_000; // Convert to yoctoNEAR
     
-    let attached_deposit = env::attached_deposit();
-    assert!(attached_deposit >= storage_cost, "Insufficient deposit");
+    require!(
+        env::attached_deposit() >= storage_cost,
+        format!("Storage deposit required: {} yoctoNEAR", storage_cost)
+    );
     
-    self.accounts.insert(&account_id, &account_storage);
+    // Store profile...
+    Ok(())
+}
+```
+
+### Pattern 2: Validating Sufficient Attachment
+
+```rust
+#[near_bindgen]
+pub fn register_token(&mut self, token_id: AccountId) -> Result<(), String> {
+    const STORAGE_REQUIRED: u128 = 350_000_000_000_000; // 350 bytes in yoctoNEAR
     
-    StorageBalance {
-        total: storage_cost,
-        available: attached_deposit - storage_cost,
+    if env::attached_deposit() < STORAGE_REQUIRED {
+        return Err(format!(
+            "Insufficient storage deposit. Required: {} yoctoNEAR, Attached: {} yoctoNEAR",
+            STORAGE_REQUIRED,
+            env::attached_deposit()
+        ));
+    }
+    
+    // Register token...
+    Ok(())
+}
+```
+
+### Pattern 3: Storage Refund Handling
+
+```rust
+#[near_bindgen]
+pub fn delete_profile(&mut self) -> Promise {
+    let profile = self.profiles.remove(&env::signer_account_id()).unwrap();
+    let storage_freed = (profile.name.len() + profile.bio.len()) as u128;
+    let refund_amount = storage_freed * 1_000_000_000_000_000;
+    
+    Promise::new(env::signer_account_id())
+        .transfer(refund_amount)
+}
+```
+
+### Pattern 4: Cross-Contract Storage Transfer
+
+```rust
+use near_sdk::promise_batch_action_transfer;
+
+#[near_bindgen]
+pub fn transfer_with_storage(&mut self, receiver: AccountId, amount: U128) -> Promise {
+    const STORAGE_BUFFER: u128 = 500_000_000_000_000; // 500 bytes buffer
+    
+    Promise::new(receiver.clone())
+        .add_access_key_with_full_access()
+        .transfer(amount.0 + STORAGE_BUFFER)
+}
+```
+
+## Contract Optimization Strategies
+
+### Lazy Initialization of State
+
+Avoid initializing large collections at contract deployment. Instead, create them on first access:
+
+```rust
+#[near_bindgen]
+pub fn get_or_create_user_data(&mut self, user: AccountId) -> UserData {
+    if !self.user_data.contains_key(&user) {
+        self.user_data.insert(user.clone(), UserData::default());
+    }
+    self.user_data.get(&user).unwrap()
+}
+```
+
+This saves storage costs for unused accounts from day one.
+
+### Strategic Collection Selection
+
+- **Vector**: Use for ordered, indexed data (minimal overhead)
+- **UnorderedMap**: Use for key-value lookups (slightly higher overhead than hashmap but serializable)
+- **LookupMap**: Use for large datasets (minimal serialization cost, only touched keys are loaded)
+
+### Data Serialization Format Impact
+
+**JSON serialization** produces ~30% more bytes than **Borsh binary serialization**. For storage-sensitive contracts, use Borsh:
+
+```rust
+#[derive(BorshSerialize, BorshDeserialize, Debug)]
+pub struct CompactData {
+    pub balance: u128,
+    pub timestamp: u64,
+}
+
+// Estimated sizes:
+// JSON: ~50 bytes
+// Borsh: ~24 bytes (52% reduction)
+```
+
+### State Versioning for Migrations
+
+Design contracts with versioning to allow efficient migrations:
+
+```rust
+#[near_bindgen]
+pub struct Contract {
+    version: u8,
+    state_v1: Option<StateV1>,
+    state_v2: Option<StateV2>,
+}
+
+pub fn migrate_v1_to_v2(&mut self) {
+    if let Some(v1) = self.state_v1.take() {
+        // Convert V1 to V2, accounting for storage differences
+        self.state_v2 = Some(StateV2::from(v1));
     }
 }
 ```
 
-### Pattern 2: Checking Storage Balance
+### Trie Node Packing Efficiency
 
-Query function to determine storage requirements:
+Store related data contiguously to maximize trie node utilization. Instead of:
 
 ```rust
-pub fn storage_balance_of(&self, account_id: AccountId) -> Option<StorageBalance> {
-    self.accounts.get(&account_id).map(|account| {
-        let storage_cost = account.storage_usage as u128 * STORAGE_COST_PER_BYTE;
-        StorageBalance {
-            total: storage_cost,
-            available: account.balance - storage_cost,
-        }
-    })
-}
+self.user_balances.insert(user.clone(), balance);
+self.user_stakes.insert(user.clone(), stake);
 ```
 
-### Pattern 3: Storage Unregister and Refunds
-
-Return unused storage deposits:
+Consider a combined struct:
 
 ```rust
-pub fn storage_unregister(&mut self, force: Option<bool>) -> bool {
-    let account_id = env::predecessor_account_id();
-    if let Some(account) = self.accounts.remove(&account_id) {
-        let storage_cost = account.storage_usage as u128 * STORAGE_COST_PER_BYTE;
-        Promise::new(account_id).transfer(account.balance);
-        true
-    } else {
-        false
-    }
-}
-```
-
-## 4. Contract Optimization Strategies
-
-### Strategy 1: State Compression and Packing
-
-**Use compact data structures**:
-
-```rust
-// ❌ Inefficient: Wastes space with enum overhead
 #[derive(BorshSerialize, BorshDeserialize)]
-pub enum TokenType {
-    Fungible(String),
-    NonFungible(String),
-    Semi(String),
+pub struct UserPosition {
+    balance: u128,
+    stake: u128,
 }
-
-// ✅ Efficient: Use discriminant-only enum
-#[derive(BorshSerialize, BorshDeserialize)]
-pub enum TokenType {
-    Fungible = 0,
-    NonFungible = 1,
-    Semi = 2,
-}
+self.user_positions.insert(user, UserPosition { balance, stake });
 ```
 
-### Strategy 2: Lazy Initialization
+## Common Mistakes and How to Avoid Them
 
-Defer state creation until needed:
+**Mistake 1: Forgetting Storage Calculations**
+- ❌ Assuming storage is "free" like traditional blockchains
+- ✅ Always calculate expected storage and attach appropriate deposits
 
-```rust
-pub fn lazy_init_metadata(&mut self) {
-    // Only create metadata when first accessed
-    if !self.metadata_initialized {
-        self.metadata = Metadata::new();
-        self.metadata_initialized = true;
-    }
-}
-```
+**Mistake 2: Exceeding Attached Deposit**
+- ❌ Allowing unlimited data writes without deposit validation
+- ✅ Check remaining attached deposit before operations: `env::attached_deposit() - used`
 
-### Strategy 3: Efficient Data Structure Selection
+**Mistake 3: Not Accounting for Serialization Overhead**
+- ❌ Estimating 100 bytes but serializing to 130 bytes
+- ✅ Test actual serialization with `to_vec()` before deployment
 
-**HashMap vs. Vector Trade-offs**:
+**Mistake 4: Ignoring Collection Overhead**
+- ❌ Using UnorderedMap for every small lookup
+- ✅ Profile collection sizes; use LookupMap for large datasets
 
-- Use **HashMap** when: Frequent lookups by key, sparse data
-- Use **Vector** when: Sequential iteration, dense data
+**Mistake 5: Leaving Orphaned Data**
+- ❌ Never clearing unused state, accumulating locked deposits
+- ✅ Implement cleanup functions and refund mechanisms
 
-```rust
-// ❌ Bad for 10,000 items with sparse IDs
-pub fn get_balance_vector(balances: &Vec<(AccountId, Balance)>, id: &AccountId) -> Balance {
-    balances.iter().find(|(a, _)| a == id).map(|(_, b)| *b).unwrap_or(0)
-    // O(n) lookup!
-}
+## Best Practices Summary
 
-// ✅ Good for 10,000 items with sparse IDs
-pub fn get_balance_hashmap(balances: &HashMap<AccountId, Balance>, id: &AccountId) -> Balance {
-    balances.get(id).copied().unwrap_or(0)
-    // O(1) lookup
-}
-```
-
-### Strategy 4: Pagination for Large Datasets
-
-```rust
-pub fn get_token_holders(&self, from_index: u64, limit: u64) -> Vec<(AccountId, Balance)> {
-    self.balances
-        .iter()
-        .skip(from_index as usize)
-        .take(limit as usize)
-        .map(|(id, balance)| (id.clone(), balance.clone()))
-        .collect()
-}
-```
-
-### Strategy 5: Archival Patterns
-
-Move historical data off-chain:
-
-```rust
-pub fn archive_completed_orders(&mut self) {
-    let current_block = env::block_index();
-    let cutoff_block = current_block - 1_000_000;
-    
-    // Delete old orders from state
-    self.orders.retain(|order| order.completion_block > cutoff_block);
-}
-```
-
-## 5. Practical Optimization Checklist
-
-- ✅ Profile storage usage with `env::storage_usage()`
-- ✅ Use `UnorderedMap` for sparse collections instead of `Vector`
-- ✅ Implement `storage_deposit()` pattern for user-funded features
-- ✅ Archive or compress old data regularly
-- ✅ Test storage costs in testnet before mainnet deployment
-- ✅ Document storage overhead in contract specifications
-- ✅ Monitor state growth with NEAR Explorer or custom indexing
-
-## 6. Best Practices Summary
-
-1. **Always calculate storage costs** before deploying contracts
-2. **Use NEAR CLI** to estimate costs: `near deploy`
-3. **Implement storage deposit patterns** for user interactions
-4. **Monitor contract state growth** over time
-5. **Optimize data structures** during development, not after
-6. **Test thoroughly** on testnet with realistic data volumes
-7. **Document storage assumptions** in your contract README
+1. **Always calculate storage needs** before writing to state
+2. **Use Borsh serialization** to minimize byte overhead
+3. **Implement deposit validation** in state-modifying functions
+4. **Provide refund mechanisms** when users delete data
+5. **Test storage costs** in testnet with actual contract code
+6. **Monitor account balance** to ensure sufficient storage reserves
+7. **Profile your contracts** to identify optimization opportunities
 
 ## Conclusion
 
-Understanding NEAR's storage staking mechanism is essential for building efficient, cost-effective smart contracts. By mastering cost calculations, implementing proper deposit patterns, and applying optimization strategies, developers can build scalable applications that maximize value while minimizing storage expenses. Start with simple calculations, move to complex scenarios, and always test on testnet before mainnet deployment.
+Storage staking in NEAR creates a sustainable, economically-aligned system for managing blockchain state. By understanding cost calculations, implementing proper deposit patterns, and optimizing contract design, you can build efficient dApps that minimize user costs while maintaining state integrity. Start with careful calculations, test thoroughly on testnet, and progressively optimize based on real usage patterns.
